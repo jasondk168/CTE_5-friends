@@ -50,6 +50,7 @@ def get_drive_file_list(folder_id: str):
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         files = []
+        # 嵌入式视图的表格结构：每个文件对应一行，包含文件名称和 data-id
         for row in soup.select("tr"):
             name_cell = row.select_one("td:first-child a")
             if name_cell:
@@ -189,7 +190,7 @@ else:
 st.sidebar.subheader("☁️ 从网盘导入")
 drive_folder_id = get_drive_folder_id()
 
-# 如果没有配置文件夹 ID，显示输入框（本地或云端从未设置）
+# 如果没有配置文件夹 ID，显示输入框
 if not drive_folder_id:
     with st.sidebar.expander("🔗 配置共享文件夹 ID", expanded=True):
         new_id = st.text_input("Google Drive 共享文件夹 ID", value="", key="local_drive_id")
@@ -203,24 +204,21 @@ if not drive_folder_id:
         st.info("💡 云端请通过 Secrets 设置 DRIVE_FOLDER_ID")
 else:
     # 已配置，显示获取文件列表按钮
-    col1, col2 = st.sidebar.columns([1, 1])
-    with col1:
-        if st.button("📂 获取文件列表", key="fetch_drive_list"):
-            with st.spinner("正在获取文件列表..."):
-                files = get_drive_file_list(drive_folder_id)
-                zip_files = [f for f in files if f['name'].lower().endswith('.zip')]
-                st.session_state.drive_file_list = zip_files
-                st.session_state.drive_file_list_fetched = True
-                if not zip_files:
-                    st.sidebar.warning("该文件夹中没有 .zip 文件")
-                else:
-                    st.sidebar.success(f"找到 {len(zip_files)} 个 ZIP 文件")
-    with col2:
-        if st.session_state.drive_file_list_fetched and st.session_state.drive_file_list:
-            if st.button("🗑️ 清空列表", key="clear_drive_list"):
-                st.session_state.drive_file_list = []
-                st.session_state.drive_file_list_fetched = False
-                st.rerun()
+    if st.button("📂 获取文件列表", key="fetch_drive_list"):
+        with st.spinner("正在获取文件列表..."):
+            files = get_drive_file_list(drive_folder_id)
+            # ————————— 调试输出 —————————
+            st.sidebar.write(f"**调试信息**：原始抓取到 {len(files)} 个文件")
+            if files:
+                st.sidebar.write("文件名：", [f['name'] for f in files])
+            # —————————————————————————————
+            zip_files = [f for f in files if f['name'].lower().endswith('.zip')]
+            st.session_state.drive_file_list = zip_files
+            st.session_state.drive_file_list_fetched = True
+            if not zip_files:
+                st.sidebar.warning("该文件夹中没有 .zip 文件，请查看上方调试信息")
+            else:
+                st.sidebar.success(f"找到 {len(zip_files)} 个 ZIP 文件")
 
     if st.session_state.drive_file_list_fetched and st.session_state.drive_file_list:
         file_names = [f['name'] for f in st.session_state.drive_file_list]
