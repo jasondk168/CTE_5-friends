@@ -13,8 +13,6 @@ PORTABLE_ROOT = SCRIPT_DIR.parent.parent
 BIN_PATH = PORTABLE_ROOT / "bin"
 os.environ["PATH"] = str(BIN_PATH) + ";" + os.environ.get("PATH", "")
 
-IS_CLOUD = os.environ.get("STREAMLIT_RUN_ID") is not None
-
 from core.srt_parser import parse_srt
 from core.cutter import cut_media, cut_text
 from core.comparator import compare_duration, SEPARATOR_KEYWORDS
@@ -35,20 +33,13 @@ def save_config(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 def get_drive_folder_id():
-    """读取 Google Drive 文件夹 ID：云端从 secrets，本地从 config.json"""
-    if IS_CLOUD:
-        # 云端从 Streamlit Secrets 读取
-        try:
-            return st.secrets["DRIVE_FOLDER_ID"]
-        except Exception:
-            return None
-    else:
-        cfg = load_config()
-        return cfg.get("drive_folder_id", "")
-
-def get_drive_api_key():
-    """保持兼容，实际不使用 API Key，但保留空占位"""
-    return ""  # 我们只使用公开共享，不需要 API Key
+    """读取 Google Drive 文件夹 ID：优先 secrets，其次 config.json"""
+    try:
+        return st.secrets["DRIVE_FOLDER_ID"]
+    except Exception:
+        pass
+    cfg = load_config()
+    return cfg.get("drive_folder_id", "")
 
 def get_drive_file_list(folder_id: str):
     """通过解析 Google Drive 嵌入式视图获取公开共享文件夹的文件列表"""
@@ -59,14 +50,12 @@ def get_drive_file_list(folder_id: str):
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         files = []
-        # 嵌入式视图的表格结构：每个文件对应一行，包含文件名称和 data-id
         for row in soup.select("tr"):
             name_cell = row.select_one("td:first-child a")
             if name_cell:
                 name = name_cell.get_text(strip=True)
                 file_id = row.get("data-id")
                 if not file_id:
-                    # 另一种结构：链接包含 file/d/ID 模式
                     href = name_cell.get("href", "")
                     match = re.search(r'/file/d/([^/]+)', href)
                     if match:
@@ -200,21 +189,20 @@ else:
 st.sidebar.subheader("☁️ 从网盘导入")
 drive_folder_id = get_drive_folder_id()
 
-# 如果在本地且未配置，显示输入框；云端则隐藏输入（通过 secrets）
-if not IS_CLOUD and not drive_folder_id:
+# 如果没有配置文件夹 ID，显示输入框（本地或云端从未设置）
+if not drive_folder_id:
     with st.sidebar.expander("🔗 配置共享文件夹 ID", expanded=True):
         new_id = st.text_input("Google Drive 共享文件夹 ID", value="", key="local_drive_id")
         if st.button("💾 保存配置", key="save_drive_id"):
             if new_id.strip():
                 save_config({"drive_folder_id": new_id.strip()})
-                st.success("✅ 文件夹 ID 已保存，只输入一次即可")
+                st.success("✅ 文件夹 ID 已保存（仅本地有效）")
                 st.rerun()
             else:
                 st.error("请输入文件夹 ID")
-elif IS_CLOUD and not drive_folder_id:
-    st.sidebar.warning("⚠️ 未配置 Secrets 中的 DRIVE_FOLDER_ID，请在 Streamlit Cloud 设置中配置")
-
-if drive_folder_id:
+        st.info("💡 云端请通过 Secrets 设置 DRIVE_FOLDER_ID")
+else:
+    # 已配置，显示获取文件列表按钮
     col1, col2 = st.sidebar.columns([1, 1])
     with col1:
         if st.button("📂 获取文件列表", key="fetch_drive_list"):
